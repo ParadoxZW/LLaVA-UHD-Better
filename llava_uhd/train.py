@@ -25,16 +25,17 @@ if local_rank != "0" and local_rank is not None:
     original_stderr = sys.stderr
     sys.stderr = errfile
 # debugfile = open(f'logs/debug1_log_rank{local_rank}.txt','w')
-    
+
 import copy
 from dataclasses import dataclass, field
+from functools import partial
 import json
 import logging
 import pathlib
 from typing import Dict, Optional, Sequence, List
-import math
+import math, random
 from PIL import Image
-from torchvision.transforms import Compose, ToTensor
+# from torchvision.transforms import Compose, ToTensor
 import torch
 from torch.utils.data import Dataset
 import transformers
@@ -47,7 +48,6 @@ import utils.conversation as conversation_lib
 from utils.mm_utils import tokenizer_image_token
 from adapt_llava import adapt_LlavaLlamaForCausalLM
 from slice_logic import process_image
-
 
 
 @dataclass
@@ -407,31 +407,36 @@ class LazySupervisedDataset(Dataset):
         if isinstance(i, int):
             sources = [sources]
         assert len(sources) == 1, "Don't know why it is wrapped to a list"  # FIXME
-        
+
         if 'image' in sources[0]:
             image_file = self.list_data_dict[i]['image']
             image_folder = self.data_args.image_folder
-            
+
             image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
-            origin_image_width  = image.size[0]
-            origin_image_height = image.size[1]
-            # if local_rank == 0:
-            #     print("path",os.path.join(image_folder, image_file))
-            #     print("size","image size",image.size)
-            
-            slices_and_image = process_image(image)
-            # print( slices_and_image[0])            
-            image_tuple = tuple(slices_and_image)
-            # print(image_tuple)
-            image_tensor = torch.cat(image_tuple,dim = 0)
-            # print("image_tensor",image_tensor.shape)
-                
+            # randomly upscale image
+            upscale_factor = random.random() * 0.5 + 1.0
+            image = image.resize((int(image.size[0] * upscale_factor), int(image.size[1] * upscale_factor)), Image.LANCZOS)
+
+            # --------------------------------------------------------------
+            # 原代码忘记了按照CLIP-ViT图像预处理的均值和标准差进行归一化
+            # [Edited by zhenwei - 2024-06-11 18:42]
+            # --------------------------------------------------------------
+            image_mean = self.data_args.image_processor.image_mean
+            image_std = self.data_args.image_processor.image_std
+            image_tensor, hw_patch_nums = process_image(
+                image, image_mean=image_mean, image_std=image_std
+            )  # Tensor[N, C, H, W], List[(h_patch_num, w_patch_num)]
+            # image_tensor = torch.cat(slices_and_image, dim=0)
+            # print(
+            #     f"[{local_rank}][{self.__class__.__name__}] origin_image_size {image.size} | image_tensor {image_tensor.shape}"
+            # )
+
             sources = preprocess_multimodal(
                 copy.deepcopy([e["conversations"] for e in sources]),
                 self.data_args)
         else:
             sources = copy.deepcopy([e["conversations"] for e in sources])
-        
+
         data_dict = preprocess(
             sources,
             self.tokenizer,
@@ -442,23 +447,20 @@ class LazySupervisedDataset(Dataset):
 
         # image exist in the data
         if 'image' in self.list_data_dict[i]:
-            # print(1)
-            data_dict['image'] = image_tensor
-            data_dict['origin_image_width'] = origin_image_width
-            data_dict['origin_image_height'] = origin_image_height
-            
-        
+            data_dict['images'] = image_tensor
+            # data_dict['image_width'] = origin_image_width
+            # data_dict['image_height'] = origin_image_height
+            # [Edited by zhenwei - 2024-06-11 16:56]
+            data_dict['image_hw_patch_nums'] = hw_patch_nums
+
         elif self.data_args.is_multimodal:
-            # print("theere isnt a photo!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            # print(2)
             # image does not exist in the data, but the model is multimodal
             crop_size = self.data_args.image_processor.crop_size
-            
-            image = torch.zeros(3, crop_size['height'], crop_size['width'])
-            
-            data_dict['image'] = image
-            data_dict['origin_image_width'] = 336
-            data_dict['origin_image_height'] = 336
+
+            image = torch.zeros(1, 3, crop_size['height'], crop_size['width'])
+
+            data_dict['images'] = image
+            data_dict['image_hw_patch_nums'] = [(24, 24, -1)]
 
         return data_dict
 
@@ -487,45 +489,24 @@ class DataCollatorForSupervisedDataset(object):
             attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
         )
         
-        if 'origin_image_width' in instances[0]:
-            origin_image_widths = [instance['origin_image_width'] for instance in instances]
-            origin_image_heights = [instance['origin_image_height'] for instance in instances]
+        if 'image_hw_patch_nums' in instances[0]:
+            # Type: List[List[Tuple(int, int, int)]]
+            # [
+            #     Sample{0}[Slice0(h_num, w_num, line_id), ..., Slice{N_0}(h_num, w_num, line_id)],
+            #     Sample{1}[Slice0(h_num, w_num, line_id), ..., Slice{N_1}(h_num, w_num, line_id)],
+            #     ...,
+            #     Sample{B}[Slice0(h_num, w_num, line_id), ..., Slice{N_B}(h_num, w_num, line_id)]
+            # ]
+            # [Edited by zhenwei - 2024-06-11 19:17]
+            batch['image_hw_patch_nums'] = [instance['image_hw_patch_nums'] for instance in instances]                
             
-            batch['origin_image_widths'] = origin_image_widths
-            batch['origin_image_heights'] = origin_image_heights
-
-                
-            
-        if 'image' in instances[0]:
-            images = [instance['image'] for instance in instances]
-            # print("____MY_DEBUG_2____",images)
-            if all(x is not None and x.shape == images[0].shape for x in images):
-                batch['images'] = torch.stack(images)
-            else:
-                max_of_x = 24
-                padded_x_tensors = []
-                for x in images:
-                    padding = torch.zeros(max_of_x - x.size(0), x.size(1), x.size(2), dtype=x.dtype)
-                    # 在第一个维度上堆叠填充
-                    padded_x_tensor = torch.cat((padding, x), dim=0)
-                    padded_x_tensors.append(padded_x_tensor)
-
-                batch['images'] = torch.stack(padded_x_tensors)
-                
-
-                # if local_rank == 0: 
-                #     print(len(batch["origin_image_heights"]))
-                #     print("batch shape",batch['images'].shape)
-                #     print(batch['origin_image_widths'][0])
-                #     print(batch["origin_image_heights"][0])
-                #     for i in range(8):
-                #         print(f"___________________________{i}_________________________________")
-                #         for y in range(5):
-                #                 print(batch['images'][0][i*3][0][y].item(),end=" ")
-                #         print("|",end=" ")
-                #         for y in range(5):
-                #                 print(batch['images'][0][i*3][335][330+y].item(),end=" ")
-                #         print(" ")
+        if 'images' in instances[0]:
+            images = [instance['images'] for instance in instances]
+            # Type: torch.Tensor
+            # Tensor[M, C, H, W]
+            # M = N_0 + N_1 + ... + N_B
+            # [Edited by zhenwei - 2024-06-11 19:21]
+            batch['images'] = torch.cat(images, dim=0)
         return batch
 
 
@@ -553,7 +534,6 @@ def train():
 
     bnb_model_from_pretrained_args = {}
     if training_args.bits in [4, 8]:
-        # print("MY_DEBUG_9________")
         from transformers import BitsAndBytesConfig
         bnb_model_from_pretrained_args.update(dict(
             device_map={"": training_args.device},
@@ -623,17 +603,7 @@ def train():
         use_fast=False,
     )
 
-    # if model_args.version == "v0":
-    #     if tokenizer.pad_token is None:
-    #         smart_tokenizer_and_embedding_resize(
-    #             special_tokens_dict=dict(pad_token="[PAD]"),
-    #             tokenizer=tokenizer,
-    #             model=model,
-    #         )
-    # elif model_args.version == "v0.5":
-    #     tokenizer.pad_token = tokenizer.unk_token
-    # else:
-    #     tokenizer.pad_token = tokenizer.unk_token
+
     tokenizer.pad_token = tokenizer.unk_token
     rank0_print("[conversation version]", model_args.version)
     if model_args.version in conversation_lib.conv_templates:
@@ -701,6 +671,10 @@ def train():
     #--------------------------------------------------------------#
     # data_module['train_dataset'] 是我重写的dataset，改了getitem方法
     #--------------------------------------------------------------#
+    # 在LLaVA-UHD代码基础上进行了重写，修复了一些bug，修正了一些错误逻辑，
+    # 补充了丢失的必要操作，改进了batch化数据arangement
+    # [Edited by zhenwei - 2024-06-11 19:26]
+    #--------------------------------------------------------------#
     data_module = make_supervised_data_module(tokenizer=tokenizer,
                                               data_args=data_args)
     
@@ -713,9 +687,10 @@ def train():
         args=training_args,
         **data_module
     )
-    with open(f'tmp/debug_{local_rank}.txt', 'w') as f:
-        for name, param in model.named_parameters():
-            print(f'{name} {param.shape} {param.dtype} {param.device} {param.requires_grad}', file=f)
+
+    # with open(f'tmp/debug_{local_rank}.txt', 'w') as f:
+    #     for name, param in model.named_parameters():
+    #         print(f'{name} {param.shape} {param.dtype} {param.device} {param.requires_grad}', file=f)
 
     #-----------------------------------------------------#
     #  检查 checkpoints 路径是否有保存的检查点
@@ -725,6 +700,9 @@ def train():
     else:
         trainer.train()
     trainer.save_state()
+
+    used_memory = round(torch.cuda.max_memory_reserved() / 1024 / 1024 / 1024, 3)
+    print(f"Peak reserved memory = {used_memory} GB.")
 
     model.config.use_cache = True
 
@@ -746,5 +724,3 @@ def train():
 
 if __name__ == "__main__":
     train()
-
-

@@ -2,16 +2,15 @@
 export HF_HUB_OFFLINE=True
 export HF_DATASETS_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
-export IMP_SILIENT_OTHERS=true
-export https_proxy="http://10.3.73.27:7891"
+# export https_proxy="http://10.3.73.27:7891"
 export WANDB_MODE=dryrun
 export WANDB_PROJECT=UHD
-export WANDB_ENTITY=964730078
+# export WANDB_ENTITY=964730078
 
 # 记录开始时间
 start_time=$(date +%s)
 
-deepspeed llava_uhd/train.py \
+deepspeed --master_port 29642 llava_uhd/train.py \
     --deepspeed ./scripts/zero2.json \
     --model_name_or_path /data2/llm_common/vicuna-7b-v1.5 \
     --version plain \
@@ -33,7 +32,7 @@ deepspeed llava_uhd/train.py \
     --save_strategy "steps" \
     --save_steps 24000 \
     --save_total_limit 1 \
-    --learning_rate 1e-3 \
+    --learning_rate 1e-4 \
     --weight_decay 0. \
     --warmup_ratio 0.03 \
     --lr_scheduler_type "cosine" \
@@ -58,7 +57,7 @@ echo "Total time: $hours hours $minutes mins"
 # 记录开始时间
 start_time=$(date +%s)
 
-deepspeed llava_uhd/train.py \
+deepspeed --master_port 29642 llava_uhd/train.py \
     --deepspeed ./scripts/zero3.json \
     --lora_enable True --lora_r 128 --lora_alpha 256 --mm_projector_lr 2e-5 \
     --image_folder /data2/datasets/llava/ft_datasets \

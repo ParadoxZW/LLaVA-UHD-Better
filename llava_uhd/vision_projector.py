@@ -34,12 +34,14 @@ class SimpleResBlock(nn.Module):
 def build_vision_projector(config, delay_load=False, **kwargs):
     projector_type = getattr(config, 'mm_projector_type', 'linear')
     
-    target_sequence_length = 64
-    grid_size = int(math.sqrt(target_sequence_length))
+    # target_sequence_length = 64
+    # grid_size = int(math.sqrt(target_sequence_length))
     resampler = Resampler(
-        grid_size=grid_size,
-        embed_dim = 5120,  # 保持与视觉模型输出的 embed_dim 一致
-        num_heads = 1024 // 128,  # 保持与视觉模型输出的 num_heads 一致
+        # [Edited by zhenwei - 2024-06-11 20:59]
+        src_grid_size=24,
+        tgt_seq_len=64,
+        embed_dim=4096,  # 保持与视觉模型输出的 embed_dim 一致
+        num_heads=1024 // 128,  # 保持与视觉模型输出的 num_heads 一致
         kv_dim=1024,  # 保持与视觉模型输出的 kv_dim 一致
     )
     

@@ -169,3 +169,4 @@ scripts_tmp/
 logs/*.log
 wandb/
 checkpoints/
+logs/*.txt
