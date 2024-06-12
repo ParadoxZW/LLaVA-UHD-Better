@@ -7,7 +7,7 @@ An all-bugs-fixed (I hope so), cleaner and improved implementation of LLaVA-UHD,
 The study of [LLaVA-UHD](https://arxiv.org/pdf/2403.11703) is a great work for the community of LMMs.
 However, the official-released repo is full of bugs, wrong logic, uncleared/uncommented debugging codes, and missing but necessary procedures. For some examples, it wrongly deal with the patch numbers of the slices and the overall image in a batch, wrongly calculate `pos_embed` and `attention_mask` in `resampler`, misses the separate tokens between sub-images, and misses the procedures of normalizing the image according CLIP's preprocessing, etc. And many people have raised problems related to [this issue](https://github.com/thunlp/LLaVA-UHD/issues/5). It seems the official team will not fix these issues in the near future.
 
-Thus, this repo aims to address these issues and improve the overall quality of the implementation, following the spirit of the paper [LLaVA-UHD](https://arxiv.org/pdf/2403.11703).
+Thus, this repo aims to address these issues and improve the overall quality of the implementation, following the spirit of the paper [LLaVA-UHD](https://arxiv.org/pdf/2403.11703). I also want to open-source this modified repo to welcome others from the community, to use it, review the code to see if there are still undiscovered mistakes, and feedback. 
 
 ## Works I have done
 
