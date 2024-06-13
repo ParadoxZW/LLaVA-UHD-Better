@@ -282,19 +282,15 @@ class adapt_LlavaMetaForCausalLM(ABC):
                             is_first_slice = False
                         else:
                             # 普通slice之间的sep
-                            sep_token = self.get_model().mm_projector.sep1_token
+                            sep_token = 0
                             # 换行slice之间的sep
                             if line_id != cur_line_id:
                                 cur_line_id += 1
-                                sep_token = self.get_model().mm_projector.sep2_token * 1 + sep_token * 0
-                            else:
-                                sep_token = self.get_model().mm_projector.sep2_token * 0 + sep_token * 1
+                                sep_token = 1
                             # slice和全图之间的sep
                             if line_id == -1:
-                                sep_token = self.get_model().mm_projector.sep3_token * 1 + sep_token * 0
-                            else:
-                                sep_token = self.get_model().mm_projector.sep3_token * 0 + sep_token * 1
-                            assert line_id == -1 or cur_line_id == line_id
+                                sep_token = 2
+                            sep_token = self.get_model().mm_projector.sep_embeddings[sep_token]
                             cur_new_input_embeds.append(sep_token)
                             cur_new_labels.append(
                                 torch.full(
@@ -314,6 +310,18 @@ class adapt_LlavaMetaForCausalLM(ABC):
                             )
                         )
 
+            if num_images == 0:
+                # print(f"[{local_rank}] no image......")
+                # --------------------------------------------------------
+                # 这是一个hacky workaround，不然的话，DeepSpeed ZeRO-3模式下，
+                # 对于纯文本样本/batch，会出现报错或者hang-out的情况。这个解决方
+                # 式参考了原 haotianliu/LLaVA repo中的写法。
+                # [Edited by zhenwei - 2024-06-13 15:13]
+                # --------------------------------------------------------
+                cur_new_input_embeds[-1] = torch.cat([
+                    cur_new_input_embeds[-1],
+                    cur_image_features[0][0:0],
+                ], dim=0)
             cur_new_input_embeds = torch.cat(cur_new_input_embeds)
             cur_new_labels = torch.cat(cur_new_labels)
             assert cur_new_input_embeds.shape[0] == cur_new_labels.shape[0]

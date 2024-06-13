@@ -101,6 +101,8 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
     emb = np.concatenate([emb_sin, emb_cos], axis=1)  # (M, D)
     return emb
 
+def trunc_normal(tensor, std):
+    trunc_normal_(tensor, std=std, a=-2 * std, b=2 * std)
 
 class Resampler(nn.Module):
     """
@@ -130,13 +132,9 @@ class Resampler(nn.Module):
         )#.requires_grad_(False)
         self.alpha = nn.Parameter(torch.zeros(1))
         self.query = nn.Parameter(torch.zeros(1, self.num_queries, embed_dim))
-        trunc_normal_(self.query, std=1 / math.sqrt(embed_dim))
-        self.sep1_token = nn.Parameter(torch.zeros(1, embed_dim))
-        trunc_normal_(self.query, std=1 / math.sqrt(embed_dim))
-        self.sep2_token = nn.Parameter(torch.zeros(1, embed_dim))
-        trunc_normal_(self.query, std=1 / math.sqrt(embed_dim))
-        self.sep3_token = nn.Parameter(torch.zeros(1, embed_dim))
-        trunc_normal_(self.query, std=1 / math.sqrt(embed_dim))
+        trunc_normal(self.query, std=1 / math.sqrt(embed_dim))
+        self.sep_embeddings = nn.Parameter(torch.zeros((3, 1, embed_dim)))
+        trunc_normal(self.sep_embeddings, std=1 / math.sqrt(embed_dim))
 
         if kv_dim is not None and kv_dim != embed_dim:
             self.kv_proj = nn.Linear(kv_dim, embed_dim, bias=False)
@@ -157,7 +155,7 @@ class Resampler(nn.Module):
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
-            trunc_normal_(m.weight, std=1. / math.sqrt(m.weight.shape[1]))
+            trunc_normal(m.weight, std=1. / math.sqrt(m.weight.shape[1]))
             if isinstance(m, nn.Linear) and m.bias is not None:
                 nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.LayerNorm):
