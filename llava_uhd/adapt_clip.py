@@ -12,7 +12,7 @@ from transformers.models.clip.modeling_clip import (CLIPEncoderLayer, CLIPAttent
                                                     CLIPEncoder, CLIPVisionTransformer, CLIPPreTrainedModel)
 from typing import List, Optional, Tuple, Union
 import os
-from slice_logic import get_patch_nums
+from llava_uhd.slice_logic import get_patch_nums
 # ---------------------------------------------------------------------------#
 # 用来生成position embedding的层
 # ---------------------------------------------------------------------------#

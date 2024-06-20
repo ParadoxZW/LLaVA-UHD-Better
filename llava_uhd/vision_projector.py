@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import re
-from resampler import Resampler
+from llava_uhd.resampler import Resampler
 import math
 
 class IdentityMap(nn.Module):
