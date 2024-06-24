@@ -34,9 +34,9 @@ It is ongoing... I will release checkpoints as soon as I reproduce the results o
 
 ## TODO
 
-- [] add codes for model evaluation on common benchmarks
-- [] release reproducible checkpoint
-- [] add logic for simultaneously fine-tuning the vision encoder when stage-2
+- [ ] add codes for model evaluation on common benchmarks
+- [ ] release reproducible checkpoint
+- [x] add logic for simultaneously fine-tuning the vision encoder when stage-2
 
 ## Acknowledgements
 
