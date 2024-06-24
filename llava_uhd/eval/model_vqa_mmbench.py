@@ -5,12 +5,14 @@ import json
 import pandas as pd
 from tqdm import tqdm
 import shortuuid
+import sys
+sys.path.append('./llava_uhd')
 
-from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
-from llava.conversation import conv_templates, SeparatorStyle
-from llava.model.builder import load_pretrained_model
-from llava.utils import disable_torch_init
-from llava.mm_utils import tokenizer_image_token, process_images, load_image_from_base64, get_model_name_from_path
+from utils.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+from utils.conversation import conv_templates, SeparatorStyle
+from builder import load_pretrained_model
+from utils.mm_utils import tokenizer_image_token, load_image_from_base64, get_model_name_from_path,disable_torch_init
+from slice_logic import process_image
 
 from PIL import Image
 import math
@@ -57,6 +59,8 @@ def eval_model(args):
     model_path = os.path.expanduser(args.model_path)
     model_name = get_model_name_from_path(model_path)
     tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, args.model_base, model_name)
+    model=model.to(device='cuda')
+    model.to(torch.float16)
 
     questions = pd.read_table(os.path.expanduser(args.question_file))
     questions = get_chunk(questions, args.num_chunks, args.chunk_idx)
@@ -81,7 +85,8 @@ def eval_model(args):
             idx = row['index']
             question = row['question']
             hint = row['hint']
-            image = load_image_from_base64(row['image'])
+            image = load_image_from_base64(row['image']).convert('RGB')
+
             if not is_none(hint):
                 question = hint + '\n' + question
             for option_char, option in zip(all_options[:len(options)], options):
@@ -102,28 +107,30 @@ def eval_model(args):
             conv.append_message(conv.roles[0], qs)
             conv.append_message(conv.roles[1], None)
             prompt = conv.get_prompt()
-            # print(prompt)
-            # quit()
 
             input_ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt').unsqueeze(0).cuda()
 
-            image_tensor = process_images([image], image_processor, model.config)[0]
+            image_mean,image_std = image_processor.image_mean, image_processor.image_std
+            image_tensor, hw_patch_nums = process_image(image, 
+            image_mean=image_mean, image_std=image_std)
+            hw_patch_nums=[hw_patch_nums]
 
             with torch.inference_mode():
                 output_ids = model.generate(
                     input_ids,
-                    images=image_tensor.unsqueeze(0).half().cuda(),
-                    image_sizes=[image.size],
+                    images=image_tensor.to(dtype=torch.float16, device='cuda', non_blocking=True),
+                    image_hw_patch_nums=hw_patch_nums,
                     do_sample=True if args.temperature > 0 else False,
                     temperature=args.temperature,
                     top_p=args.top_p,
                     num_beams=args.num_beams,
                     # no_repeat_ngram_size=3,
-                    max_new_tokens=1024,
+                    max_new_tokens=2000,
                     use_cache=True)
 
-            outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
-
+            input_token_len = input_ids.shape[1]
+            outputs = tokenizer.batch_decode(output_ids[:, input_token_len:], skip_special_tokens=True)[0]
+            outputs = outputs.strip()
             ans_id = shortuuid.uuid()
             ans_file.write(json.dumps({"question_id": idx,
                                     "round_id": round_idx,

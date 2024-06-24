@@ -21,7 +21,7 @@ from transformers import (
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 # from ..llava_arch import  LlavaMetaForCausalLM
-from llava_uhd.utils.constants import (
+from utils.constants import (
     IGNORE_INDEX,
     IMAGE_TOKEN_INDEX,
     DEFAULT_IMAGE_PATCH_TOKEN,
@@ -29,8 +29,8 @@ from llava_uhd.utils.constants import (
     DEFAULT_IM_END_TOKEN,
 )
 
-from llava_uhd.adapt_clip import adapt_build_vision_tower
-from llava_uhd.vision_projector import build_vision_projector
+from adapt_clip import adapt_build_vision_tower
+from vision_projector import build_vision_projector
 
 
 from abc import ABC, abstractmethod

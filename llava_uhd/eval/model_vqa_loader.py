@@ -4,14 +4,15 @@ import os
 import json
 from tqdm import tqdm
 import shortuuid
+import sys
+sys.path.append('./llava_uhd')
 
-from llava_uhd.utils.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
-from llava_uhd.utils.conversation import conv_templates, SeparatorStyle
-from llava_uhd.model.builder import load_pretrained_model
-from llava_uhd.model.utils import disable_torch_init
-from llava_uhd.utils.mm_utils import tokenizer_image_token,get_model_name_from_path
+from utils.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+from utils.conversation import conv_templates, SeparatorStyle
+from builder import load_pretrained_model
+from utils.mm_utils import tokenizer_image_token,get_model_name_from_path, disable_torch_init
 from torch.utils.data import Dataset, DataLoader
-from llava_uhd.slice_logic import process_image
+from slice_logic import process_image
 from PIL import Image
 import math
 from torchvision import transforms
@@ -106,6 +107,9 @@ def eval_model(args):
         cur_prompt = line["text"]
 
         input_ids = input_ids.to(device='cuda', non_blocking=True)
+        # print(image_tensor.shape)
+        # print(hw_patch_nums)
+        # quit()
 
         with torch.inference_mode():
             output_ids = model.generate(

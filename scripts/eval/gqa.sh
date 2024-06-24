@@ -17,9 +17,9 @@ SPLIT="llava_gqa_testdev_balanced"
 GQADIR="./playground/data/eval/gqa/data"
 
 for IDX in $(seq 0 $((CHUNKS-1))); do
-    CUDA_VISIBLE_DEVICES=${GPULIST[$IDX]} python -m llava_uhd.eval.model_vqa_loader  \
+    CUDA_VISIBLE_DEVICES=${GPULIST[$IDX]} python  llava_uhd/eval/model_vqa_loader.py  \
         --model-path ./checkpoints/$MODEL_NAME \
-        --model-base /data/llm_common/llava-v1.5-7b \
+        --model-base /data/llm_common/vicuna-7b-v1.5 \
         --question-file ./playground/data/eval/gqa/$SPLIT.jsonl \
         --image-folder /data/ouyangxc/data/gqa/images \
         --answers-file ./playground/data/eval/gqa/answers/$SPLIT/$CKPT/${CHUNKS}_${IDX}.jsonl \

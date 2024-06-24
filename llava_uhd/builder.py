@@ -19,8 +19,8 @@ import shutil
 
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, BitsAndBytesConfig
 import torch
-from llava_uhd.model import *
-from llava_uhd.utils.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+# from model import *
+from utils.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
 
 def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", use_flash_attn=False, **kwargs):
@@ -50,12 +50,13 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         if 'lora' in model_name.lower() and model_base is None:
             warnings.warn('There is `lora` in model name but no `model_base` is provided. If you are loading a LoRA model, please provide the `model_base` argument. Detailed instruction: https://github.com/haotian-liu/LLaVA#launch-a-model-worker-lora-weights-unmerged.')
         if 'lora' in model_name.lower() and model_base is not None:
-            from llava_uhd.model.language_model.llava_llama import LlavaConfig
+            # from model.language_model.llava_llama import LlavaConfig
+            from adapt_llava import LlavaConfig
             lora_cfg_pretrained = LlavaConfig.from_pretrained(model_path)
             tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
             print('Loading LLaVA from base model...')
 
-            from llava_uhd.adapt_llava import adapt_LlavaLlamaForCausalLM
+            from adapt_llava import adapt_LlavaLlamaForCausalLM
             # model = LlavaLlamaForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
             model = adapt_LlavaLlamaForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
             token_num, tokem_dim = model.lm_head.out_features, model.lm_head.in_features
@@ -105,7 +106,14 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             mm_projector_weights = {k: v.to(torch.float16) for k, v in mm_projector_weights.items()}
             model.load_state_dict(mm_projector_weights, strict=False)
         else:
-            if 'mpt' in model_name.lower():
+            if 'fft' in model_name.lower():
+                from adapt_llava import LlavaConfig
+                lora_cfg_pretrained = LlavaConfig.from_pretrained(model_path)
+                from adapt_llava import adapt_LlavaLlamaForCausalLM
+                model = adapt_LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, config=lora_cfg_pretrained, **kwargs)
+                tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
+
+            elif 'mpt' in model_name.lower():
                 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
                 model = LlavaMptForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, **kwargs)
             elif 'mistral' in model_name.lower():
