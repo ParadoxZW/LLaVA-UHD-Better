@@ -9,7 +9,7 @@ IFS=',' read -ra GPULIST <<< "$gpu_list"
 
 CHUNKS=${#GPULIST[@]}
 
-MODEL_NAME="llava-uhd-v1.5-7b-fft"
+MODEL_NAME="llava-uhd-v1.5-7b-lora"
 CKPT="${MODEL_NAME}_1"
 SPLIT="llava_uhd_v1"
 

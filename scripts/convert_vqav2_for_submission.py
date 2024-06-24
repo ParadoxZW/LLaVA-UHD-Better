@@ -1,6 +1,4 @@
 import os, sys
-# print(sys.path)
-# quit()
 sys.path.append('./')
 import argparse
 import json
