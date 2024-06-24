@@ -62,6 +62,7 @@ class adapt_LlavaMetaModel:
         self.config.mm_vision_tower = vision_tower
 
         if self.get_vision_tower() is None:
+            rank0_print("vision tower is None, so we build it now...")
             vision_tower = adapt_build_vision_tower(model_args)
 
             if fsdp is not None and len(fsdp) > 0:
@@ -69,6 +70,7 @@ class adapt_LlavaMetaModel:
             else:
                 self.vision_tower = vision_tower
         else:
+            rank0_print(f"vision tower is not None, but delay_load is {self.get_vision_tower().delay_load}")
             if fsdp is not None and len(fsdp) > 0:
                 vision_tower = self.vision_tower[0]
             else:

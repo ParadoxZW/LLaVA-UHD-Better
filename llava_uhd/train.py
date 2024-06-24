@@ -109,6 +109,7 @@ class TrainingArguments(transformers.TrainingArguments):
     lora_bias: str = "none"
     mm_projector_lr: Optional[float] = None
     group_by_modality_length: bool = field(default=False)
+    tune_vision_encoder: bool = field(default=False)
 
 
 def maybe_zero_3(param, ignore_status=False, name=None):
@@ -171,6 +172,27 @@ def find_all_linear_names(model):
     multimodal_keywords = ['mm_projector', 'vision_tower', 'vision_resampler']
     for name, module in model.named_modules():
         if any(mm_keyword in name for mm_keyword in multimodal_keywords):
+            continue
+        if isinstance(module, cls):
+            names = name.split('.')
+            lora_module_names.add(names[0] if len(names) == 1 else names[-1])
+
+    if 'lm_head' in lora_module_names: # needed for 16-bit
+        lora_module_names.remove('lm_head')
+    return list(lora_module_names)
+
+
+def find_all_linear_names_vision(model, ignore_self_attn=False, ignore_mlp=False):
+    # ignore_keywords = ['self_attn', 'mlp']
+    ignore_keywords = []
+    if ignore_self_attn:
+        ignore_keywords.append('self_attn')
+    if ignore_mlp:
+        ignore_keywords.append('mlp')
+    cls = torch.nn.Linear
+    lora_module_names = set()
+    for name, module in model.named_modules():
+        if any(mm_keyword in name for mm_keyword in ignore_keywords):
             continue
         if isinstance(module, cls):
             names = name.split('.')
@@ -623,6 +645,20 @@ def train():
         vision_tower = model.get_vision_tower()
         vision_tower.to(dtype=torch.bfloat16 if training_args.bf16 else torch.float16, device=training_args.device)
 
+        if training_args.tune_vision_encoder:
+            vision_tower.vision_tower.requires_grad_(False)
+            lora_config_v = LoraConfig(
+                r=training_args.lora_r,
+                lora_alpha=training_args.lora_alpha,
+                target_modules=find_all_linear_names_vision(vision_tower.vision_tower, ignore_mlp=True),
+                lora_dropout=training_args.lora_dropout,
+                bias=training_args.lora_bias,
+                task_type="FEATURE_EXTRACTION",
+            )
+            vision_tower.vision_tower = get_peft_model(vision_tower.vision_tower, lora_config_v)
+            vision_tower.vision_tower.vision_model.embeddings.position_embedding.requires_grad_(True)
+            rank0_print("vision_tower tuning is enabled...")
+
         data_args.image_processor = vision_tower.image_processor
         data_args.is_multimodal = True
 
@@ -714,6 +750,14 @@ def train():
             model.named_parameters()
         )
         if training_args.local_rank == 0 or training_args.local_rank == -1:
+            if training_args.tune_vision_encoder:
+                save_dir = os.path.join(training_args.output_dir, 'clip')
+                vision_tower = model.get_model().vision_tower
+                vision_tower.image_processor.save_pretrained(save_dir)
+                vision_model = vision_tower.vision_tower
+                vision_model = vision_model.merge_and_unload()
+                vision_model.save_pretrained(save_dir)
+                model.config.mm_vision_tower = save_dir  # TODO: check
             model.config.save_pretrained(training_args.output_dir)
             model.save_pretrained(training_args.output_dir, state_dict=state_dict)
             torch.save(non_lora_state_dict, os.path.join(training_args.output_dir, 'non_lora_trainables.bin'))

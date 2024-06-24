@@ -91,8 +91,6 @@ class adapt_CLIPVisionEmbeddings(nn.Module):
         self.image_size = config.image_size
         self.patch_size = config.patch_size
 
-        self.class_embedding = nn.Parameter(torch.randn(self.embed_dim))
-
         self.patch_embedding = nn.Conv2d(
             in_channels=config.num_channels,
             out_channels=self.embed_dim,
@@ -101,6 +99,9 @@ class adapt_CLIPVisionEmbeddings(nn.Module):
             bias=False,
         )
 
+        # `device=` is required to avoid deepspeed warning about `broadcasted from rank 0`
+        # [Edited by zhenwei - 2024-06-24 21:56]
+        self.class_embedding = nn.Parameter(torch.randn(self.embed_dim, device=self.patch_embedding.weight.device))
         self.num_patches = (self.image_size // self.patch_size) ** 2
         self.num_positions = self.num_patches + 1
         self.position_embedding = nn.Embedding(self.num_positions, self.embed_dim)
@@ -220,6 +221,9 @@ class adapt_CLIPVisionModel(CLIPVisionModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         hw_patch_nums = None,
+        # `**kwargs` is required for supporting lora modules
+        # [Edited by zhenwei - 2024-06-24 21:54]
+        **kwargs
     ) -> Union[Tuple, BaseModelOutputWithPooling]:
         
         # if pixel_values.shape[0] == 1:
@@ -247,6 +251,7 @@ class adapt_CLIPVisionTower(nn.Module):
         self.select_layer = args.mm_vision_select_layer
         self.select_feature = getattr(args, 'mm_vision_select_feature', 'patch')
 
+        rank0_print(f'vision tower delay load: {delay_load}')
         if not delay_load:
             self.load_model()
         else:
@@ -273,7 +278,6 @@ class adapt_CLIPVisionTower(nn.Module):
         return image_features
 
     # @torch.no_grad()  # 原代码忘记了注释这个
-    # TODO: 训练二阶段开启微调 vision tower
     def forward(self, images, hw_patch_nums, attention_mask=None):       
         # ---------------------------------------------------------
         # 我修改了这个函数的大部分逻辑, 注释部分为原代码
@@ -281,7 +285,8 @@ class adapt_CLIPVisionTower(nn.Module):
         # ---------------------------------------------------------
 
         image_forward_outs = self.vision_tower(
-            images.to(device=self.device, dtype=self.dtype),
+            # `pixel_values=` is required for lora modules
+            pixel_values=images.to(device=self.device, dtype=self.dtype),
             attention_mask=attention_mask,
             output_hidden_states=True,
             hw_patch_nums=hw_patch_nums,
