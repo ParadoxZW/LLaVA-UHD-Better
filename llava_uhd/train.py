@@ -36,6 +36,7 @@ from typing import Dict, Optional, Sequence, List
 import math, random
 from PIL import Image
 # from torchvision.transforms import Compose, ToTensor
+from torchvision import transforms
 import torch
 from torch.utils.data import Dataset
 import transformers
@@ -198,8 +199,6 @@ def find_all_linear_names_vision(model, ignore_self_attn=False, ignore_mlp=False
             names = name.split('.')
             lora_module_names.add(names[0] if len(names) == 1 else names[-1])
 
-    if 'lm_head' in lora_module_names: # needed for 16-bit
-        lora_module_names.remove('lm_head')
     return list(lora_module_names)
 
 
@@ -395,9 +394,13 @@ class LazySupervisedDataset(Dataset):
 
     def __init__(self, data_path: str,
                  tokenizer: transformers.PreTrainedTokenizer,
-                 data_args: DataArguments):
+                 data_args: DataArguments,
+                 is_stage1: bool = False):
         super(LazySupervisedDataset, self).__init__()
         list_data_dict = json.load(open(data_path, "r"))
+        if 'blip_laion_cc_sbu_558k' in data_path:
+            is_stage1 = True
+        self.is_stage1 = is_stage1
 
         rank0_print("Formatting inputs...Skip in lazy mode")
         self.tokenizer = tokenizer
@@ -436,8 +439,12 @@ class LazySupervisedDataset(Dataset):
 
             image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
             # randomly upscale image
-            upscale_factor = random.random() * 0.5 + 1.0
-            image = image.resize((int(image.size[0] * upscale_factor), int(image.size[1] * upscale_factor)), Image.LANCZOS)
+            if self.is_stage1:
+                upscale_factor = random.random() + 1.0
+                image = image.resize((int(image.size[0] * upscale_factor), int(image.size[1] * upscale_factor)), Image.LANCZOS)
+            origin_w, origin_h = image.size
+            if min(origin_w, origin_h) < 336:
+                image = transforms.Resize(336, interpolation=Image.LANCZOS)(image)
 
             # --------------------------------------------------------------
             # 原代码忘记了按照CLIP-ViT图像预处理的均值和标准差进行归一化

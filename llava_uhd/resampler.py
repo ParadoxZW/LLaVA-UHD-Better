@@ -141,7 +141,7 @@ class Resampler(nn.Module):
         else:
             self.kv_proj = nn.Identity()
 
-        self.attn = nn.MultiheadAttention(embed_dim, num_heads, dropout=0.3, batch_first=True)
+        self.attn = nn.MultiheadAttention(embed_dim, num_heads, dropout=0.1, batch_first=True)
 
         self.ln_kv = norm_layer(embed_dim)
         self.ln1 = norm_layer(embed_dim)
