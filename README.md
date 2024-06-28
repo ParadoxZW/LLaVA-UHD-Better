@@ -25,6 +25,10 @@ The preparation of the environment and datasets follows [LLaVA](https://github.c
 ```BASH
 bash scripts/train.sh
 ```
+Run the scripts for evaluation:
+```BASH
+bash scripts/eval/textvqa.sh
+```
 
 **Note:** dependency packages of higher versions may lead problems. For example, you may meet `token mismatch` warning at stage-2. Commenting out the line `use_fast=False` of the tokenizer may help.
 
