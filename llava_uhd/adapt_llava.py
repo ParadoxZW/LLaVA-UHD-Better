@@ -70,7 +70,7 @@ class adapt_LlavaMetaModel:
             else:
                 self.vision_tower = vision_tower
         else:
-            rank0_print(f"vision tower is not None, but delay_load is {self.get_vision_tower().delay_load}")
+            rank0_print(f"vision tower is not None")
             if fsdp is not None and len(fsdp) > 0:
                 vision_tower = self.vision_tower[0]
             else:
@@ -134,7 +134,7 @@ class adapt_LlavaMetaForCausalLM(ABC):
         for h, w in flatten_hw_patch_nums:
             # Note: The first token is for CLS
             m = torch.zeros(577, dtype=torch.bool, device=images.device)
-            m[:w * h] = True
+            m[:w * h + 1] = True
             attention_masks.append(m)
         attention_masks = torch.stack(attention_masks, dim=0)
         # ------------ Prepare inputs for CLIP-ViT ----------------

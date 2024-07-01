@@ -176,11 +176,14 @@ class adapt_CLIPVisionTransformer(nn.Module):
         
         hidden_states = self.pre_layrnorm(hidden_states)
 
-        attention_mask = attention_mask.unsqueeze(1).unsqueeze(1).expand(-1, -1, hidden_states.shape[1], -1)
+        # Thanks to @hust-nj for reported bug: https://github.com/ParadoxZW/LLaVA-UHD-Better/issues/3
+        attention_mask_additive = torch.full_like(attention_mask, torch.finfo(torch.float).min)
+        attention_mask_additive.masked_fill_(attention_mask, 0)
+        attention_mask_additive = attention_mask_additive[:, None, None, :].expand(-1, -1, hidden_states.shape[1], -1)
 
         encoder_outputs = self.encoder(
             inputs_embeds=hidden_states,
-            attention_mask=attention_mask,
+            attention_mask=attention_mask_additive,
             # causal_attention_mask=attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
