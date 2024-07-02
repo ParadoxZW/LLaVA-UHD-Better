@@ -40,7 +40,7 @@ from torchvision import transforms
 import torch
 from torch.utils.data import Dataset
 import transformers
-
+from peft import LoraConfig, get_peft_model
 
 from utils.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from utils.llava_trainer import LLaVATrainer
@@ -607,7 +607,6 @@ def train():
             model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
     if training_args.lora_enable:
-        from peft import LoraConfig, get_peft_model
         lora_config = LoraConfig(
             r=training_args.lora_r,
             lora_alpha=training_args.lora_alpha,
@@ -657,13 +656,26 @@ def train():
             lora_config_v = LoraConfig(
                 r=training_args.lora_r,
                 lora_alpha=training_args.lora_alpha,
-                target_modules=find_all_linear_names_vision(vision_tower.vision_tower, ignore_mlp=True),
+                # target_modules=find_all_linear_names_vision(vision_tower.vision_tower, ignore_mlp=True),
+                target_modules=[
+                    'self_attn.q_proj', 
+                    'self_attn.k_proj' , 
+                    'layers.21.mlp.fc1', 
+                    'layers.21.mlp.fc2', 
+                    'layers.22.mlp.fc1',
+                    'layers.22.mlp.fc2',
+                ],
                 lora_dropout=training_args.lora_dropout,
                 bias=training_args.lora_bias,
                 task_type="FEATURE_EXTRACTION",
             )
             vision_tower.vision_tower = get_peft_model(vision_tower.vision_tower, lora_config_v)
             vision_tower.vision_tower.vision_model.embeddings.position_embedding.requires_grad_(True)
+            for n, p in vision_tower.vision_tower.named_parameters():
+                if 'post_layernorm' in n:
+                    continue
+                if 'norm' in n:
+                    p.requires_grad = True
             rank0_print("vision_tower tuning is enabled...")
 
         data_args.image_processor = vision_tower.image_processor
@@ -750,6 +762,21 @@ def train():
     model.config.use_cache = True
 
     if training_args.lora_enable:
+        if training_args.tune_vision_encoder:
+            vision_tower = model.get_model().vision_tower
+            vision_model = vision_tower.vision_tower
+
+            vision_model = vision_model.merge_and_unload()
+            vision_model.requires_grad_(False)
+            vision_model_state = vision_model.named_parameters()
+            vision_model_state = {k: maybe_zero_3(v, ignore_status=True) for k, v in vision_model_state}
+
+            if training_args.local_rank == 0 or training_args.local_rank == -1:
+                save_dir = os.path.join(training_args.output_dir, 'clip')
+                vision_tower.image_processor.save_pretrained(save_dir)
+                torch.save(vision_model_state, os.path.join(save_dir, 'pytorch_model.bin'))
+                model.config.mm_vision_tower = save_dir  # TODO: check
+
         state_dict = get_peft_state_maybe_zero_3(
             model.named_parameters(), training_args.lora_bias
         )
@@ -757,18 +784,13 @@ def train():
             model.named_parameters()
         )
         if training_args.local_rank == 0 or training_args.local_rank == -1:
-            if training_args.tune_vision_encoder:
-                save_dir = os.path.join(training_args.output_dir, 'clip')
-                vision_tower = model.get_model().vision_tower
-                vision_tower.image_processor.save_pretrained(save_dir)
-                vision_model = vision_tower.vision_tower
-                vision_model = vision_model.merge_and_unload()
-                vision_model.save_pretrained(save_dir)
-                model.config.mm_vision_tower = save_dir  # TODO: check
             model.config.save_pretrained(training_args.output_dir)
             model.save_pretrained(training_args.output_dir, state_dict=state_dict)
             torch.save(non_lora_state_dict, os.path.join(training_args.output_dir, 'non_lora_trainables.bin'))
     else:
+        if training_args.tune_vision_encoder:
+            vision_tower = model.get_model().vision_tower
+            vision_tower.vision_tower = vision_tower.vision_tower.merge_and_unload()
         safe_save_model_for_hf_trainer(trainer=trainer,
                                     output_dir=training_args.output_dir)
 

@@ -209,6 +209,7 @@ class adapt_CLIPVisionTransformer(nn.Module):
 class adapt_CLIPVisionModel(CLIPVisionModel):
     config_class = CLIPVisionConfig
     main_input_name = "pixel_values"
+    _no_split_modules = ["CLIPVisionModel"]
 
     def __init__(self, config: CLIPVisionConfig):
         super().__init__(config)
@@ -261,6 +262,8 @@ class adapt_CLIPVisionTower(nn.Module):
             self.cfg_only = CLIPVisionConfig.from_pretrained(self.vision_tower_name)
 
     def load_model(self):
+        if self.is_loaded:
+            return
         self.image_processor = CLIPImageProcessor.from_pretrained(self.vision_tower_name)
         self.vision_tower = adapt_CLIPVisionModel.from_pretrained(self.vision_tower_name)
         self.vision_tower.requires_grad_(False)
