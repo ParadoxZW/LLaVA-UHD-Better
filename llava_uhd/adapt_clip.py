@@ -177,7 +177,8 @@ class adapt_CLIPVisionTransformer(nn.Module):
         hidden_states = self.pre_layrnorm(hidden_states)
 
         # Thanks to @hust-nj for reported bug: https://github.com/ParadoxZW/LLaVA-UHD-Better/issues/3
-        attention_mask_additive = torch.full_like(attention_mask, torch.finfo(torch.float).min)
+        dtype = hidden_states.dtype
+        attention_mask_additive = torch.full_like(attention_mask, torch.finfo(dtype).min, dtype=dtype)
         attention_mask_additive.masked_fill_(attention_mask, 0)
         attention_mask_additive = attention_mask_additive[:, None, None, :].expand(-1, -1, hidden_states.shape[1], -1)
 
